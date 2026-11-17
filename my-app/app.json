@@ -20,6 +20,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "scheme": "meuapp",
+    "plugins": [
+      "expo-router",
+      "expo-status-bar"
+    ]
   }
 }
