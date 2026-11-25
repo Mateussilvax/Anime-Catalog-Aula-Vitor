@@ -1,14 +1,111 @@
-import { useEffect, useState } from 'react';
-import { FlatList, Image, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { Animated, FlatList, Image, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function Ranking() {
-  const [animes, setAnimes] = useState<any[]>([]);
+function AnimeCard({ item, index }: { item: any; index: number }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(24)).current;
 
   useEffect(() => {
+    // Os primeiros 8 cards entram em cascata; os de baixo entram rápido ao rolar
+    const delay = index < 8 ? index * 80 : 50;
+
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 400,
+        delay,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 400,
+        delay,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [index, opacity, translateY]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.card,
+        {
+          opacity,
+          transform: [{ translateY }],
+        },
+      ]}
+    >
+      <Image
+        source={{ uri: item.node.main_picture?.medium }}
+        style={styles.poster}
+        resizeMode="cover"
+      />
+
+      <View style={styles.infoContainer}>
+        <Text style={styles.animeTitle} numberOfLines={2}>
+          {item.node.title}
+        </Text>
+
+        <View style={styles.detailsContainer}>
+          <View style={styles.detailRow}>
+            <Ionicons
+              name="podium"
+              size={14}
+              color="#111111"
+              style={styles.detailIcon}
+            />
+            <Text style={styles.detailText}>
+              <Text style={styles.detailLabel}>Ranking: </Text>
+              #{item.ranking.rank}
+            </Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Ionicons
+              name="star"
+              size={14}
+              color="#111111"
+              style={styles.detailIcon}
+            />
+            <Text style={styles.detailText}>
+              <Text style={styles.detailLabel}>Nota: </Text>
+              {item.node.mean ?? 'Sem avaliação'}
+            </Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Ionicons
+              name="film"
+              size={14}
+              color="#111111"
+              style={styles.detailIcon}
+            />
+            <Text style={styles.detailText} numberOfLines={1}>
+              <Text style={styles.detailLabel}>Estúdio: </Text>
+              {item.node.studios?.[0]?.name ?? 'Não informado'}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+export default function Ranking() {
+  const [animes, setAnimes] = useState<any[]>([]);
+  const [animKey, setAnimKey] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      setAnimKey(prev => prev + 1);
+    }, [])
+  );
+  useEffect(() => {
     fetch(
-      'https://api.myanimelist.net/v2/anime/ranking?ranking_type=all&limit=40&fields=mean,genres',
+      'https://api.myanimelist.net/v2/anime/ranking?ranking_type=all&limit=40&fields=mean,studios',
       {
         headers: {
           'X-MAL-CLIENT-ID': process.env.EXPO_PUBLIC_MAL_CLIENT_ID ?? '',
@@ -27,6 +124,7 @@ export default function Ranking() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <FlatList
+        key={animKey}
         data={animes}
         keyExtractor={item => String(item.node.id)}
         showsVerticalScrollIndicator={false}
@@ -41,63 +139,7 @@ export default function Ranking() {
             </View>
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Image
-              source={{ uri: item.node.main_picture?.medium }}
-              style={styles.poster}
-              resizeMode="cover"
-            />
-
-            <View style={styles.infoContainer}>
-              <Text style={styles.animeTitle} numberOfLines={2}>
-                {item.node.title}
-              </Text>
-
-              <View style={styles.detailsContainer}>
-                <View style={styles.detailRow}>
-                  <Ionicons
-                    name="podium"
-                    size={14}
-                    color="#111111"
-                    style={styles.detailIcon}
-                  />
-                  <Text style={styles.detailText}>
-                    <Text style={styles.detailLabel}>Ranking: </Text>
-                    #{item.ranking.rank}
-                  </Text>
-                </View>
-
-                <View style={styles.detailRow}>
-                  <Ionicons
-                    name="star"
-                    size={14}
-                    color="#111111"
-                    style={styles.detailIcon}
-                  />
-                  <Text style={styles.detailText}>
-                    <Text style={styles.detailLabel}>Nota: </Text>
-                    {item.node.mean ?? 'Sem avaliação'}
-                  </Text>
-                </View>
-
-                <View style={styles.detailRow}>
-                  <Ionicons
-                    name="pricetags"
-                    size={14}
-                    color="#111111"
-                    style={styles.detailIcon}
-                  />
-                  <Text style={styles.detailText} numberOfLines={2}>
-                    <Text style={styles.detailLabel}>Gênero: </Text>
-                    {item.node.genres?.map((g: any) => g.name).join(', ') ||
-                      'Não informado'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
+        renderItem={({ item, index }) => <AnimeCard item={item} index={index} />}
       />
     </SafeAreaView>
   );
