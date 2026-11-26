@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = '@game_vitorias';
@@ -70,6 +72,137 @@ export default function Game() {
   const [acertou, setAcertou] = useState(false);
   const [vitorias, setVitorias] = useState(0);
 
+  // Valores de animação da entrada em cascata (Placar, Card do Jogo e Histórico)
+  const scoreOpacity = useRef(new Animated.Value(0)).current;
+  const scoreY = useRef(new Animated.Value(20)).current;
+  const cardOpacity = useRef(new Animated.Value(0)).current;
+  const cardY = useRef(new Animated.Value(24)).current;
+  const historyOpacity = useRef(new Animated.Value(0)).current;
+  const historyY = useRef(new Animated.Value(28)).current;
+
+  // Valores de animação das ações do jogo
+  const posterOpacity = useRef(new Animated.Value(0)).current;
+  const posterScale = useRef(new Animated.Value(0.9)).current;
+  const shakeX = useRef(new Animated.Value(0)).current;
+  const scoreScale = useRef(new Animated.Value(1)).current;
+
+  // 1. Entrada em cascata toda vez que o usuário troca para a aba Game
+  useFocusEffect(
+    useCallback(() => {
+      scoreOpacity.setValue(0);
+      scoreY.setValue(20);
+      cardOpacity.setValue(0);
+      cardY.setValue(24);
+      historyOpacity.setValue(0);
+      historyY.setValue(28);
+
+      Animated.stagger(90, [
+        Animated.parallel([
+          Animated.timing(scoreOpacity, {
+            toValue: 1,
+            duration: 350,
+            useNativeDriver: true,
+          }),
+          Animated.timing(scoreY, {
+            toValue: 0,
+            duration: 350,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(cardOpacity, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(cardY, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(historyOpacity, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(historyY, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start();
+    }, [scoreOpacity, scoreY, cardOpacity, cardY, historyOpacity, historyY])
+  );
+
+  // 2. Transição suave de entrada da capa nova
+  function animarNovaRodada() {
+    posterOpacity.setValue(0);
+    posterScale.setValue(0.9);
+
+    Animated.parallel([
+      Animated.timing(posterOpacity, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.spring(posterScale, {
+        toValue: 1,
+        friction: 6,
+        tension: 70,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }
+
+  // 3. Tremida rápida no campo de texto quando erra o palpite
+  function animarErro() {
+    shakeX.setValue(0);
+
+    Animated.sequence([
+      Animated.timing(shakeX, { toValue: 10, duration: 45, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue: -10, duration: 45, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue: 8, duration: 45, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue: -8, duration: 45, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue: 4, duration: 45, useNativeDriver: true }),
+      Animated.timing(shakeX, { toValue: 0, duration: 45, useNativeDriver: true }),
+    ]).start();
+  }
+
+  // 4. Efeito mola na capa e pulsada no placar quando acerta
+  function animarVitoria() {
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(posterScale, {
+          toValue: 1.07,
+          duration: 140,
+          useNativeDriver: true,
+        }),
+        Animated.spring(posterScale, {
+          toValue: 1,
+          friction: 4,
+          tension: 90,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.sequence([
+        Animated.timing(scoreScale, {
+          toValue: 1.22,
+          duration: 140,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scoreScale, {
+          toValue: 1,
+          friction: 4,
+          tension: 90,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }
+
   function sortearAnime(lista: any[]) {
     if (lista.length === 0) return;
     const indice = Math.floor(Math.random() * lista.length);
@@ -86,9 +219,9 @@ export default function Game() {
     setPalpite('');
     setHistorico([]);
     setAcertou(false);
+    animarNovaRodada();
   }
 
-  // 1. Carrega o total de vitórias salvo no celular (AsyncStorage)
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
       .then(salvo => {
@@ -99,7 +232,6 @@ export default function Game() {
       .catch(error => console.log('Erro ao ler vitórias:', error));
   }, []);
 
-  // 2. Busca os 200 mais populares, filtra só os principais e sorteia o primeiro
   useEffect(() => {
     fetch(
       'https://api.myanimelist.net/v2/anime/ranking?ranking_type=bypopularity&limit=200&fields=alternative_titles',
@@ -120,7 +252,6 @@ export default function Game() {
       .finally(() => setCarregando(false));
   }, []);
 
-  // 3. Compara o palpite normalizado com os nomes válidos do anime
   function verificarPalpite() {
     const chute = palpite.trim();
     const chuteNormalizado = normalizar(chute);
@@ -149,10 +280,13 @@ export default function Game() {
       setAcertou(true);
       const novoTotal = vitorias + 1;
       setVitorias(novoTotal);
+      animarVitoria();
 
       AsyncStorage.setItem(STORAGE_KEY, String(novoTotal)).catch(error =>
         console.log('Erro ao salvar vitórias:', error)
       );
+    } else {
+      animarErro();
     }
   }
 
@@ -167,7 +301,6 @@ export default function Game() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Cabeçalho no padrão das outras telas */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Adivinhe o Anime</Text>
             <View style={styles.subtitleRow}>
@@ -177,12 +310,24 @@ export default function Game() {
             </View>
           </View>
 
-          {/* Placar salvo no AsyncStorage */}
-          <View style={styles.scoreRow}>
-            <View style={styles.scoreBadge}>
+          <Animated.View
+            style={[
+              styles.scoreRow,
+              {
+                opacity: scoreOpacity,
+                transform: [{ translateY: scoreY }],
+              },
+            ]}
+          >
+            <Animated.View
+              style={[
+                styles.scoreBadge,
+                { transform: [{ scale: scoreScale }] },
+              ]}
+            >
               <Ionicons name="trophy" size={16} color="#111111" />
               <Text style={styles.scoreText}>Vitórias: {vitorias}</Text>
-            </View>
+            </Animated.View>
 
             <View style={styles.scoreBadge}>
               <Ionicons name="list" size={16} color="#111111" />
@@ -190,7 +335,7 @@ export default function Game() {
                 Tentativas: {historico.length}
               </Text>
             </View>
-          </View>
+          </Animated.View>
 
           {carregando ? (
             <View style={styles.loadingBox}>
@@ -199,19 +344,33 @@ export default function Game() {
             </View>
           ) : (
             <>
-              {/* Card da capa com blur */}
-              <View style={styles.gameCard}>
+              <Animated.View
+                style={[
+                  styles.gameCard,
+                  {
+                    opacity: cardOpacity,
+                    transform: [{ translateY: cardY }],
+                  },
+                ]}
+              >
                 {animeAtual && (
-                  <Image
-                    source={{
-                      uri:
-                        animeAtual.main_picture?.large ||
-                        animeAtual.main_picture?.medium,
+                  <Animated.View
+                    style={{
+                      opacity: posterOpacity,
+                      transform: [{ scale: posterScale }],
                     }}
-                    blurRadius={acertou ? 0 : 5}
-                    style={styles.poster}
-                    resizeMode="cover"
-                  />
+                  >
+                    <Image
+                      source={{
+                        uri:
+                          animeAtual.main_picture?.large ||
+                          animeAtual.main_picture?.medium,
+                      }}
+                      blurRadius={acertou ? 0 : 12}
+                      style={styles.poster}
+                      resizeMode="cover"
+                    />
+                  </Animated.View>
                 )}
 
                 {acertou ? (
@@ -244,7 +403,12 @@ export default function Game() {
                   </View>
                 ) : (
                   <View style={styles.inputSection}>
-                    <View style={styles.inputBar}>
+                    <Animated.View
+                      style={[
+                        styles.inputBar,
+                        { transform: [{ translateX: shakeX }] },
+                      ]}
+                    >
                       <Ionicons name="help-circle" size={20} color="#444444" />
                       <TextInput
                         style={styles.input}
@@ -265,7 +429,7 @@ export default function Game() {
                           />
                         </TouchableOpacity>
                       )}
-                    </View>
+                    </Animated.View>
 
                     <View style={styles.buttonsRow}>
                       <TouchableOpacity
@@ -294,10 +458,17 @@ export default function Game() {
                     </View>
                   </View>
                 )}
-              </View>
+              </Animated.View>
 
-              {/* Histórico de tentativas da rodada */}
-              <View style={styles.historyCard}>
+              <Animated.View
+                style={[
+                  styles.historyCard,
+                  {
+                    opacity: historyOpacity,
+                    transform: [{ translateY: historyY }],
+                  },
+                ]}
+              >
                 <View style={styles.historyHeader}>
                   <Ionicons name="time" size={18} color="#111111" />
                   <Text style={styles.historyTitle}>
@@ -340,7 +511,7 @@ export default function Game() {
                     })}
                   </View>
                 )}
-              </View>
+              </Animated.View>
             </>
           )}
         </ScrollView>
@@ -365,7 +536,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
     marginBottom: 16,
-    paddingTop: 35,
   },
   headerTitle: {
     fontSize: 22,
